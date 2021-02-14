@@ -1,0 +1,19 @@
+,avg_ride_distance,avg_ride_duration,avg_ride_fare,
+Week-17,6807,873,11.82273178,Churn Customers
+Week-15,6157,838,11.16592512,
+Week-14,7161,915,12.14121022,
+,,,,
+,1004,77,0.975285099,
+,,,,
+Week-17,6775,845,11.68065629,Loyal Customers
+Week-15,6322,854,11.36369299,
+Week-14,6747,840,11.59497659,
+,,,,
+,,,,
+,,avg_ride_distance,avg_ride_duration,avg_ride_fare
+,Churn Customers Week-17,6807,873,11.82273178
+,Churn Customers Week-15,6157,838,11.16592512
+,Churn Customers Week-14,7161,915,12.14121022
+,Loyal Customers Week-17,6775,845,11.68065629
+,Loyal Customers Week-15,6322,854,11.36369299
+,Loyal Customers Week-14,6747,840,11.59497659

@@ -1,0 +1,706 @@
+create table dbo.combine_data as ( 
+SELECT  
+A.driver_id,
+A.driver_onboard_date,
+B.ride_distance,
+B.ride_duration,
+B.ride_id,
+B.ride_prime_time,
+C.[event] as event_,
+C.[timestamp] as timestamp_,
+--(((ride_distance *  0.00062137) * 1.15) + ((ride_duration  / 60) * 0.22 ) + (ride_prime_time / 60 ) + 3.75) as ride_fare,
+CASE
+	WHEN (((ride_distance *  0.00062137) * 1.15) + ((ride_duration  / 60) * 0.22 ) + (ride_prime_time / 60 ) + 3.75) < 5 THEN  '5'
+	WHEN (((ride_distance *  0.00062137) * 1.15) + ((ride_duration  / 60) * 0.22 ) + (ride_prime_time / 60 ) + 3.75) > 400 THEN  '400'
+	ELSE (((ride_distance  * 0.00062137) * 1.15) + ((ride_duration  / 60) * 0.22 ) + (ride_prime_time / 60 ) + 3.75) 
+end as ride_fare
+
+INTO dbo.combine_data
+
+from
+[dbo].[driver_ids] A
+inner join
+[dbo].[ride_ids] B
+on 
+A.driver_id	= B.driver_id
+inner join
+[dbo].[ride_timestamps] C
+on B.ride_id = C.ride_id
+);
+
+
+select top 100 * from dbo.combine_data
+
+SELECT
+A.driver_id
+,month(A.timestamp_) as _month
+--,sum(A.ride_fare)
+--,count(distinct A.ride_id) 
+,(sum(A.ride_fare)/count(distinct A.ride_id)) as Life_time
+from (select distinct ride_id, driver_id, ride_fare, timestamp_ from dbo.combine_data) A
+GROUP BY driver_id;
+
+
+
+
+select 
+A.driver_id
+,A.month_
+,(sum(A.ride_fare)/count(distinct A.ride_id)) as Life_time
+INTO dbo.new_data
+from 
+(
+select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+)A
+GROUP BY driver_id, month_
+order by driver_id,month_;
+
+
+-- Question 2
+
+select 
+avg(A.count_) as avg_projected 
+from 
+(select driver_id, count(month_) as count_ from 
+dbo.new_data
+group by driver_id
+)A
+
+
+select 
+count(A.driver_id) as count_driver
+from 
+(select driver_id, count(month_) as count_ from 
+dbo.new_data
+group by driver_id
+)A
+where A.count_ = 4
+
+-- 1 49
+-- 2 316
+-- 3 409
+-- 4 63
+
+
+-- Question 3
+select 
+XX.driver_id,
+XX.week_number
+from
+(
+select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_, day(A.timestamp_) as days_, DatePart(week, A.timestamp_) as week_number
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+--order by driver_id, month_,days_
+)XX
+group by driver_id, week_number
+order by driver_id, week_number desc
+)YY
+
+select 
+XX.driver_id,
+AVG(XX.Life_time) as AVG_LIFE_TIME
+from
+(
+select
+A.driver_id
+,A.month_
+,(sum(A.ride_fare)/count(distinct A.ride_id)) as Life_time
+from 
+(
+select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+)A
+GROUP BY driver_id, month_
+)XX
+group by driver_id;
+
+--where driver_id = '3caf85a7d6b8f5615fbc21e8310af584'
+order by A.month_ 
+
+from
+(select timestamp_
+from dbo.combine_data)A;
+
+
+order by Life_time desc;
+
+
+
+
+select * from 
+dbo.combine_data
+where driver_id= '7c27405cefee2fad79a81a819ca9dbe1'
+
+group by 
+
+select [driver_onboard_date] from dbo.combine_data;
+
+select CONVERT(DATETIME, [driver_onboard_date],  105)
+from dbo.combine_data
+
+
+
+
+
+select 
+avg(ride_distance) as avg_ride_distance,
+avg(ride_duration) as avg_ride_duration,
+avg(ride_fare) as avg_ride_fare
+from 
+(select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_, DatePart(week, A.timestamp_) as week_number 
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+) A
+where driver_id in 
+('011e5c5dfc5c2c92501b8b24d47509bc'
+,'02e440f6c209206375833cef02e0cbae'
+,'0938ed763cb3129ae63607aaf69daff5'
+,'0f057c0c73054f569a59a0880b91cbb0'
+,'1127af601413f32c08e2a89447e5f3b9'
+,'14183e69946d782c92eb53b3c6eeb86f'
+,'1805f90c5220ac830835df3309a76e78'
+,'1a2af09b492ba2519c5b4aec478642a7'
+,'23017e4c03d224c89b5e3a0550e1bd9f'
+,'2d42e6d775b4399a56b71c2f3d6905ab'
+,'2f29fdfd281552870b7f07152889e0fb'
+,'3777e15bb2eb838394a372e119d96462'
+,'37ac4f9379c836b08c9a6e2315fd66af'
+,'3f82d353964869022a995e87b480a901'
+,'548a85a2fbb4986fd7a632566e8cb9c3'
+,'706466935b9e1d04e4e116be7ce90ea9'
+,'7b625f643d0775f0ac4898e33235377b'
+,'7d8627729a14175b1424153ba46d7acf'
+,'b7bd34f3d587ea950dabfd4ac7781f2f'
+,'bf0a8a6ddc179a9466082343c5862904'
+,'da3325f424c71942ca8a3401615a0e6c'
+,'dfe29c1db80f470f4fa8046bc7e5d8a0'
+,'e8d73d55baeb522ef8843cb54cd08df0'
+,'f86eb77e1cefe28e9f0e9d3775fae261'
+,'fed19d671569afe8a2f9fa0953dd25ca'
+,'007f0389f9c7b03ef97098422f902e62'
+,'579967d1572ee95c66ffa1ca4077b61a'
+,'6455eac21c029b8d93ff09c2dffcea35'
+,'7f4350f4a358ac264ccf3b10c4966afc'
+,'f1b4411717c78f67380366c2a16a4d1e'
+)
+and week_number = 13
+order by driver_id
+
+
+
+
+
+-- 
+select 
+avg(ride_distance) as avg_ride_distance,
+avg(ride_duration) as avg_ride_duration,
+avg(ride_fare) as avg_ride_fare
+from 
+(select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_, DatePart(week, A.timestamp_) as week_number 
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+) A
+where driver_id not in 
+('002be0ffdc997bd5c50703158b7c2491'
+,'007f0389f9c7b03ef97098422f902e62'
+,'007f0389f9c7b03ef97098422f902e62'
+,'007f0389f9c7b03ef97098422f902e62'
+,'011e5c5dfc5c2c92501b8b24d47509bc'
+,'011e5c5dfc5c2c92501b8b24d47509bc'
+,'011e5c5dfc5c2c92501b8b24d47509bc'
+,'0152a2f305e71d26cc964f8d4411add9'
+,'021e5cd15ef0bb3ec20a12af99e142b3'
+,'021e5cd15ef0bb3ec20a12af99e142b3'
+,'02d6a6b8a6da15fc219a9570f7ebbe78'
+,'02e440f6c209206375833cef02e0cbae'
+,'02e440f6c209206375833cef02e0cbae'
+,'039c5afbca8e03e4c18d9c8ea94140ac'
+,'039c5afbca8e03e4c18d9c8ea94140ac'
+,'03f2b5c74cb89f39e58711699e76bf39'
+,'03f2b5c74cb89f39e58711699e76bf39'
+,'052bba06c5fc0bdea4bc2f9cb92b37c7'
+,'052bba06c5fc0bdea4bc2f9cb92b37c7'
+,'07e6a2fdaadc640cca9a7bec41351065'
+,'07e6a2fdaadc640cca9a7bec41351065'
+,'081d8ba3bc9a00a481df02bd9d0a4c53'
+,'081d8ba3bc9a00a481df02bd9d0a4c53'
+,'0938ed763cb3129ae63607aaf69daff5'
+,'0938ed763cb3129ae63607aaf69daff5'
+,'0938ed763cb3129ae63607aaf69daff5'
+,'0abc4faab8bbdf4d62412655fe0a2398'
+,'0afc0241296972b583debd7c5f5c707c'
+,'0b10af0ede0648dbe6ae05813c5cbf1b'
+,'0f057c0c73054f569a59a0880b91cbb0'
+,'0f057c0c73054f569a59a0880b91cbb0'
+,'0f057c0c73054f569a59a0880b91cbb0'
+,'10d2c35bb4b440aa1eaf06d477ff27a6'
+,'1127af601413f32c08e2a89447e5f3b9'
+,'1127af601413f32c08e2a89447e5f3b9'
+,'1127af601413f32c08e2a89447e5f3b9'
+,'118be60e268514eb85f66ddb82bfa407'
+,'133c19880625cbe91986ee3c402866cd'
+,'1340d44ca7946f4192cd80d8f47ce99b'
+,'14183e69946d782c92eb53b3c6eeb86f'
+,'14183e69946d782c92eb53b3c6eeb86f'
+,'14183e69946d782c92eb53b3c6eeb86f'
+,'148fb453d12992652b56d8bc2cfb1b78'
+,'162441a5f1b85a5c3780686296c3bc75'
+,'16cd1e08be52741e1516cade45ae7754'
+,'175540c364f94b6adbc0ce3541a3254a'
+,'175540c364f94b6adbc0ce3541a3254a'
+,'1805f90c5220ac830835df3309a76e78'
+,'1805f90c5220ac830835df3309a76e78'
+,'1925803c42c264e21fdcf0a35fbd2107'
+,'1936720ce0900cbff6d9114328c84bee'
+,'1936720ce0900cbff6d9114328c84bee'
+,'1a2af09b492ba2519c5b4aec478642a7'
+,'1a2af09b492ba2519c5b4aec478642a7'
+,'1b51afba3b72e0259db160170f824f95'
+,'1c4312919166a0e7cefe6b3ddf1ec9c6'
+,'1cf95d6dd025d792340b623bcff18260'
+,'1e836fdeba5bcacf45438c08bfcf4fa3'
+,'1eb30783865c10a8abc395e1b73bd578'
+,'1ed175c60fdf7380fefc804bf4dd75f3'
+,'1f8e4a81c9da3260c84f14483319a338'
+,'20f5672c1b6a59b9d5ec09a34ad90e9b'
+,'20f5672c1b6a59b9d5ec09a34ad90e9b'
+,'220d2d2a94c58c0f7ee7cb1864d5f0c5'
+,'2231ec7a993e7ce92f79588ccc405e21'
+,'2231ec7a993e7ce92f79588ccc405e21'
+,'22ca9510a0c0d97ba66750530ee0e914'
+,'22ca9510a0c0d97ba66750530ee0e914'
+,'23017e4c03d224c89b5e3a0550e1bd9f'
+,'23017e4c03d224c89b5e3a0550e1bd9f'
+,'236af2c3c395a20fd53696a5634abd7b'
+,'23f2a72a48ef9f44301dbcfd69f8b3f0'
+,'23f2a72a48ef9f44301dbcfd69f8b3f0'
+,'24708f36edaf58e1c50b06720b536b45'
+,'24b79c598cb070bf049057bd529d3c86'
+,'24f805c6313acfbc2250cbfd90268b24'
+,'25061f5683655c7cc6e503eb0383c96e'
+,'2678d03ea513d10988818e77c5915b75'
+,'26dd952cf82f0d354e4007476748a1dc'
+,'274a1e97df854e1590ae812ca9ee5ac7'
+,'281274ed70a896744065199c58462f3d'
+,'28e4da66781b209cd9a299365a0dcab0'
+,'299507a03373935d7a89a9fd6a6c0e46'
+,'299507a03373935d7a89a9fd6a6c0e46'
+,'2a4afd4ab156dd0a6a0dc48bdf5d8db7'
+,'2b1f99b4f3360623da8fdcd39828122e'
+,'2ba51f9574a5c08327a718edada3e052'
+,'2ba60fe37b426385154d69d8eff687e1'
+,'2cc500616c927ce30d0bd1e87c699ef5'
+,'2cc500616c927ce30d0bd1e87c699ef5'
+,'2cc500616c927ce30d0bd1e87c699ef5'
+,'2d42e6d775b4399a56b71c2f3d6905ab'
+,'2e5d7b104b570a5cf450f6825880c9dc'
+,'2e882efad8288189f654defcd3dbcd64'
+,'2ebb15757eae00c4c491f569ca1a72a4'
+,'2ed0f3c071cdebf30186d2bf0a0c6151'
+,'2f29fdfd281552870b7f07152889e0fb'
+,'2f3773bd9dab0fa3e04c6f58dc0714a4'
+,'30e91f4104a6b5b0450588d8febddd93'
+,'3155bb6b7fc081f2cccc4f50c9bea08e'
+,'329870cd7580c9efbc6b62073f89b90d'
+,'3474d70dfe09a1d9545f436cd3f3136a'
+,'34e2c40d9d6f01ec4a0ffed4b032ec1e'
+,'35c3b0390b6f80657c53fb46b13f0a9e'
+,'35db61ddf8e29d55a2d355ed0f9166d8'
+,'35fa59db20f02b89264c5a97b94d7785'
+,'3777e15bb2eb838394a372e119d96462'
+,'3777e15bb2eb838394a372e119d96462'
+,'378f8bfcef6759b1e6b0e66b04424f54'
+,'378f8bfcef6759b1e6b0e66b04424f54'
+,'37ac4f9379c836b08c9a6e2315fd66af'
+,'3a52faf7577b389cbe9912652cbad33c'
+,'3dad0a540eaab6fa876e4938d728efae'
+,'3dec7f876bb8b281df66b46469c79393'
+,'3dec7f876bb8b281df66b46469c79393'
+,'3e66ede2d283842c643b6b623d0ca168'
+,'3f82d353964869022a995e87b480a901'
+,'3f82d353964869022a995e87b480a901'
+,'3fcdb7a637be76b45ad806d4f832c966'
+,'400daded5197f955191887cd567338ee'
+,'4125bef57464803d018cacc1d3f08f74'
+,'440abd26a1c60ce02351bf1823d2d46d'
+,'44198b15df35d0827ebef271b6264727'
+,'45ebd51300bd4bcc529a11a855827db4'
+,'46b9dc30efea1755f8ada69668793bf5'
+,'46e1da1c7fe0602747beb9fe6bbaf037'
+,'46e1da1c7fe0602747beb9fe6bbaf037'
+,'46fcd24790c5eae35fa517051024bfe7'
+,'4742b3f8432af0165e291edc6b8c5e53'
+,'479c3dccc06056867dd10c7d9fa0f569'
+,'48e49f85bb962b1f77ed152cc32dcd0a'
+,'4952bdd8850792b72466848cb4930f10'
+,'4aa585f63fbe04dcded4019662cc47f8'
+,'4af132c905d92d74454ca4934ee2450a'
+,'4b52c260ac5817566e61009e4bd23329'
+,'4b52c260ac5817566e61009e4bd23329'
+,'4bcc817c8aba8c5569e370b238831e77'
+,'4c5f4c8887459671e65b68826fe750c3'
+,'4d10262d534bd366736dcabc8d37a3bb'
+,'4dd633c46b8d78842b1e9dfb7f6a60e7'
+,'4dd633c46b8d78842b1e9dfb7f6a60e7'
+,'4f06c1412e8f2c16c96abb053997112f'
+,'4f06c1412e8f2c16c96abb053997112f'
+,'50eadd94fd0152fd0638a915061c4c94'
+,'512ee3c7f8f9bfa6b7d3d824f5af228d'
+,'514da6a81ecbe7cd98fc71045c66aae1'
+,'52bc8ebc7db90d5b77453bf475677ebd'
+,'53e554eb940176c64fa8ee10a394f835'
+,'5420c76a41d255a40272c8f3c1f93c6a'
+,'5420c76a41d255a40272c8f3c1f93c6a'
+,'5479187ed46c2c87abacde90f4d8ed6f'
+,'5479187ed46c2c87abacde90f4d8ed6f'
+,'548a85a2fbb4986fd7a632566e8cb9c3'
+,'554a4f92c47ec3280d3ca64f5250b023'
+,'554a4f92c47ec3280d3ca64f5250b023'
+,'55d7b17732745057aff29fcd0ce13014'
+,'561593fc7dd18e6a78c6ad5e7eef0061'
+,'5718c878f7879770af94d41951431983'
+,'579967d1572ee95c66ffa1ca4077b61a'
+,'57c15602f0b088ce6b9e4f88edce149c'
+,'57c355d13a3bcfd36b3245d03f3f9d69'
+,'583740d998ccdf639276e797a6caa9df'
+,'5a22303ccd79309f5324acc7b0e751bf'
+,'5b33db9198566d3fcc5aa0bdeb435d2a'
+,'5c00ecb439cd4e2377e9bb3de84b0e74'
+,'5c00ecb439cd4e2377e9bb3de84b0e74'
+,'5c00ecb439cd4e2377e9bb3de84b0e74'
+,'5cf93f7d1d3a8f0cf395c84053c31b1b'
+,'5cf93f7d1d3a8f0cf395c84053c31b1b'
+,'5dd7009f3d7f049d3e38b155ecd3a24e'
+,'5dd7009f3d7f049d3e38b155ecd3a24e'
+,'5e37e705afb774452ab30d20b9561a0f'
+,'5e5bfc73736d6aa15ac33ea01d47e5ee'
+,'5fce375e4e5c673c29e652df1ac0b903'
+,'60a524518de0ab4261b0e71ee7011d64'
+,'633310975f38cbaf67eb5043b4c6c77c'
+,'6455eac21c029b8d93ff09c2dffcea35'
+,'6455eac21c029b8d93ff09c2dffcea35'
+,'6455eac21c029b8d93ff09c2dffcea35'
+,'647bd8b8b02c285db177096a351f8e2c'
+,'647bd8b8b02c285db177096a351f8e2c'
+,'65b885fb53d0d952ed5be174c9c2d76d'
+,'685a660507aba9066865ebfd62c48451'
+,'6b941e22c8f9b2f159cce49fef9febff'
+,'6bc4ee6df691c3bed34c69aa93964ee9'
+,'6c1c6b6992a23fe80dc5377cba9cc2e4'
+,'6c1c6b6992a23fe80dc5377cba9cc2e4'
+,'6cb35e276085548f3f095a85aa63af7b'
+,'6cdff0516a17236168522e0a270f4671'
+,'6db38fccb3ac1de3981b701eb5a15d84'
+,'6df6c8f8d3c2a93314245a604c02bed1'
+,'6e70c2024934874d052225a4466fb9c1'
+,'6eb562641c6e0074c14ac265153ccda6'
+,'6eb562641c6e0074c14ac265153ccda6'
+,'6f107d977e357e3d22036cc447b354b0'
+,'6f9156b8af78f1e7f4ce971b50cacf29'
+,'6f9156b8af78f1e7f4ce971b50cacf29'
+,'7023bf0fa91bea71ae7bfa2481fb5b90'
+,'7023bf0fa91bea71ae7bfa2481fb5b90'
+,'706466935b9e1d04e4e116be7ce90ea9'
+,'734e463e87289ed53edf3802a2cda9fe'
+,'7419cd5c573ff9994c0f8ff5d92b4408'
+,'7473815d8eb56f765461525f1bf48c93'
+,'7476a4cdfe6cb9587f03db358dff548f'
+,'7476a4cdfe6cb9587f03db358dff548f'
+,'762db27fc4dd1e53dd4fa982ae2162b4'
+,'766fea0c4f0b265fe9ac9e1e4ec64ad7'
+,'7708f393e874acbdd44bbf47c9a328e9'
+,'7708f393e874acbdd44bbf47c9a328e9'
+,'785d6109caeb2f53c0628c37b20d91cb'
+,'7a1fd3df8aa8197bdb3be8c5d4ffa92d'
+,'7aee4951b59fcd1edda02bbecaa2a717'
+,'7b625f643d0775f0ac4898e33235377b'
+,'7c1478b12207107ae4296e656a49d6f6'
+,'7c8d33cc16246462e046ed084f7428a4'
+,'7d8627729a14175b1424153ba46d7acf'
+,'7d8627729a14175b1424153ba46d7acf'
+,'7f4350f4a358ac264ccf3b10c4966afc'
+,'7f47fd2db9cfdc30fe46068ad017152b'
+,'7ff85c5c0e9324e28d1e0d0589c364bd'
+,'80f8e8eb5eac6dd41259ccc73993aff6'
+,'81fe057f033eeba6b1472a8fce5c1fdb'
+,'83a0efd007f4db8f0b7db5753d80fd87'
+,'844d41532242b64d8f19774b6b7f1c82'
+,'844d41532242b64d8f19774b6b7f1c82'
+,'844d41532242b64d8f19774b6b7f1c82'
+,'849726bb431c44a984e5f0f60923a0ff'
+,'8506914d35a1146dd602b68a93b5be5a'
+,'8506914d35a1146dd602b68a93b5be5a'
+,'86f580ee80bb5a54e07595410d624108'
+,'86f580ee80bb5a54e07595410d624108'
+,'876e3742e4165313e3be9ca7ff4e41b2'
+,'876e3742e4165313e3be9ca7ff4e41b2'
+,'87b493b5ff1b807c2320801fcd16ac26'
+,'89788880a732b675ba9cd9854adcf684'
+,'89788880a732b675ba9cd9854adcf684'
+,'8a7d9195606bdc9bd5305f6bb300e1de'
+,'8a7d9195606bdc9bd5305f6bb300e1de'
+,'8b09ef45562214f00e7c11ed16d70dc8'
+,'8b688ef44a5b17bd7150350d059e67ea'
+,'8b688ef44a5b17bd7150350d059e67ea'
+,'8b87786b3a356550a4708f5ab3768792'
+,'8b87786b3a356550a4708f5ab3768792'
+,'8c0d55bf42d242ac86f43c4031d6371f'
+,'8c38fce0915fbb7d816e19c3ecda64fb'
+,'8c38fce0915fbb7d816e19c3ecda64fb'
+,'8c40d50720fcc5990329f7312d1ad327'
+,'8d3740598109bb310e6244ecc1971a85'
+,'8d5a99f2032a336a57222948915edf09'
+,'8dbfef11a650dd9658ca0c6f70b84f88'
+,'8dbfef11a650dd9658ca0c6f70b84f88'
+,'8dc9d28aa6ab0af5dcc98420a9bd65e0'
+,'8dfea9e24286290d2f59f5b51f00b6c2'
+,'8eb2f1fd0858319b86b9e44b64660eb6'
+,'8eb2f1fd0858319b86b9e44b64660eb6'
+,'905f8007cd46415eba8b9dce088b4395'
+,'915b7e1b8cdd0e1bf9826e8ae91706b4'
+,'922214b02f8dfbde50e8cdaa187dfd47'
+,'93337ec6e89c26ff280f490dc3eb9042'
+,'93fb5779620ce28dea9cb83cbb25ff9b'
+,'94699541835b03d2a18e265299c11213'
+,'94699541835b03d2a18e265299c11213'
+,'94731f1d1f9180223445e77690aefc03'
+,'9494350df132e6748afca3bc5d138dcc'
+,'956942174fc793c4bfb6fffc4b3c1c7b'
+,'962f9787bc5b8dd06dbc2147c39ae15b'
+,'96d7ab03f9156154f6f2144263a85579'
+,'987c2e7dfc9a93697b8dfd030487ff01'
+,'987c2e7dfc9a93697b8dfd030487ff01'
+,'987f45c1c19d83fcf3295828771c10f7'
+,'987f45c1c19d83fcf3295828771c10f7'
+,'98a7f586f974550506502f52e47700f5'
+,'9a54684a69721c1075c2af5fc077665b'
+,'9a54684a69721c1075c2af5fc077665b'
+,'9b665130b27de44f369a44b2cb752670'
+,'9b73a887dab36dc0a53f3308bc278a2e'
+,'9b73a887dab36dc0a53f3308bc278a2e'
+,'9c5835247a252ab6275775341b502f4a'
+,'9dc512e71a0f206687f60b8bfc405050'
+,'9dc512e71a0f206687f60b8bfc405050'
+,'9ded5e80238ea1cb8e923d3f3b03ccd4'
+,'9ded5e80238ea1cb8e923d3f3b03ccd4'
+,'9e291e9ae23649f498e166278c16344a'
+,'a0b52413e2eedcc5ca6f31d53ab1a96c'
+,'a12d788b7cd01f696bb5ebf28fa739cc'
+,'a21d85d9c18b9589f82a618f0531ecac'
+,'a21d85d9c18b9589f82a618f0531ecac'
+,'a60115fe0ec8c0e2d4fb8958a28567f6'
+,'a6505f04908e487e37c61c2a2a582eaf'
+,'a8bf411134a27779046e2f7ed3b2e1cf'
+,'ab76a5e04d9126c2070bf84ac419f80e'
+,'ab76a5e04d9126c2070bf84ac419f80e'
+,'ac3c378542ada7cfedc24720ef9e3273'
+,'ac51126328b559dd3872766d2455bba0'
+,'ac986e2a577103efe48b23cd17a4b6ed'
+,'acd5d321f5a7e35ccc3bf80a2c744c36'
+,'af74473d8f38c0c3e8cba5b72f747281'
+,'af74473d8f38c0c3e8cba5b72f747281'
+,'af74473d8f38c0c3e8cba5b72f747281'
+,'b14d2355eb3b7daf6b07c44a31fb23d4'
+,'b14d2355eb3b7daf6b07c44a31fb23d4'
+,'b1adb42b262bed41aeab28e9f6e93633'
+,'b2b3c6614a4a317bdfb7a57ae8a1687d'
+,'b508b23b0c53f5e3ee71562e531a3a25'
+,'b5275d250226cf29df0164d0f62d5ba7'
+,'b5b1d33f7a438b13f85fcc46cc248578'
+,'b5b1d33f7a438b13f85fcc46cc248578'
+,'b66b0833b679faefba66e3f1b9eb579b'
+,'b6b8068eea005094bf1eeab9c35c9c11'
+,'b7bd34f3d587ea950dabfd4ac7781f2f'
+,'b7bd34f3d587ea950dabfd4ac7781f2f'
+,'b972617c1e490250b2dbcd3353fd436b'
+,'b97fd5240666a3c3ded13df9f73ca71d'
+,'ba5185bc3765e91878ea56a67f156acb'
+,'ba78525b3444a3714174f4734720996a'
+,'bb2984ebd891be82156fff038a85aafa'
+,'bb2984ebd891be82156fff038a85aafa'
+,'bb2993a27d213c0eefab695ef0214fa9'
+,'bd2cf0eb59f96babbb13b724d8d77b12'
+,'bd5cea890904311cd874773b13255406'
+,'bd5cea890904311cd874773b13255406'
+,'bd5cea890904311cd874773b13255406'
+,'bd9366761825d97d4c79c2c61638318b'
+,'bd9366761825d97d4c79c2c61638318b'
+,'bdca40c895def7985563060c5dcbd0ca'
+,'be22fe5992cb9557d7748113ea1f6057'
+,'be34f66b259b110d8908297419741202'
+,'bf0a8a6ddc179a9466082343c5862904'
+,'c56b62b863a81370827e04d2c0a669a8'
+,'c7de222dc1b99eddaa9a665687b94dc3'
+,'c826130d392023b4c535431e2616e88b'
+,'c95b96b3d38fbf45da2bc43db49861c5'
+,'c9b9fc54bf7c8edcbe35b1091f38cf0f'
+,'cad3107b4ec2400c662cd8eab4e20026'
+,'cb5ecf234f7492c867bfa875a2c677b5'
+,'cb5ecf234f7492c867bfa875a2c677b5'
+,'cdab4b0c1ece5d2bc1d671ef6bf21382'
+,'cdfff0fd9f4511931eff58f549fffc12'
+,'cea2a4389f823240e8dfbc3ea95e42f0'
+,'cea2a4389f823240e8dfbc3ea95e42f0'
+,'d27b078b9f801a979bda2687ef91159a'
+,'d27b078b9f801a979bda2687ef91159a'
+,'d28f88b9d68ac9a2c0586728bdc91bcf'
+,'d28f88b9d68ac9a2c0586728bdc91bcf'
+,'d31eded9263eab43f614eecc6a52a0f5'
+,'d42d0642a28cb2d7415bc7176fdfcb9c'
+,'d4867a7af060ee2a814c6be63b48473a'
+,'d500e63eb4adbab2fb34140565ae4d20'
+,'d500e63eb4adbab2fb34140565ae4d20'
+,'d952de85df73349f0280fbb2345148ae'
+,'d9ef4b835e202c9b24315b999894362a'
+,'da3325f424c71942ca8a3401615a0e6c'
+,'da8f13b0ebc53fe1147d982f087b5806'
+,'da8f13b0ebc53fe1147d982f087b5806'
+,'daddf0bdb8874309dd07bd9d91396166'
+,'daddf0bdb8874309dd07bd9d91396166'
+,'dae249fc394c9bdf02f7d8bb1ff55733'
+,'dae249fc394c9bdf02f7d8bb1ff55733'
+,'db9cf75a3edf5b1d38fdf560682cec48'
+,'dccfed81fccb496e10c26074253a1330'
+,'ded0963ff2f6582b382b72de6f123a08'
+,'df9ab418e87b21319bdfe389a4552e08'
+,'dfe29c1db80f470f4fa8046bc7e5d8a0'
+,'dfe29c1db80f470f4fa8046bc7e5d8a0'
+,'e0449ff246754057062a6331c7a7b661'
+,'e0449ff246754057062a6331c7a7b661'
+,'e0e3594e7d43742458a79799c7a5dd6c'
+,'e0e76adfaac64932530b49127890139c'
+,'e121472f6b4dd372dfceb87c7e30cbac'
+,'e121472f6b4dd372dfceb87c7e30cbac'
+,'e246b5012a29db02ad24ce4b7e332b9b'
+,'e26a411f427d8387e1244ece6053c940'
+,'e2dc374288c7edd10ce6647a8e6ae548'
+,'e31ae4a7e10b56e18f3f988fe48acbcb'
+,'e3306c36e5fe929405591869e0ee98d5'
+,'e3306c36e5fe929405591869e0ee98d5'
+,'e3306c36e5fe929405591869e0ee98d5'
+,'e33e7bd3f983ccbc3014e3689b1062f7'
+,'e4038e6006053cadf0bb2f8795e6c9eb'
+,'e64f09e2fba9abd0daf0668bbcd7ae97'
+,'e64f09e2fba9abd0daf0668bbcd7ae97'
+,'e76529a86a5efc221a88a6c91a75ea59'
+,'e8d73d55baeb522ef8843cb54cd08df0'
+,'e8d73d55baeb522ef8843cb54cd08df0'
+,'e8efeab7179493aca6effda3bf21833e'
+,'ea1f8d9a6f34043a8e8a3f78dbda7f9a'
+,'eb48fcd046d9d869a6c6eccd90392480'
+,'ec1637dbd16bb38ec0b5a93c14373364'
+,'ec1637dbd16bb38ec0b5a93c14373364'
+,'edc891e47623366a2aaa2b1a32ae1fa1'
+,'edc891e47623366a2aaa2b1a32ae1fa1'
+,'edc891e47623366a2aaa2b1a32ae1fa1'
+,'edca8abe7dd3a699bde27f9241e73dda'
+,'eeb00fe9de3e348006f6f7128e6cf4e3'
+,'eeb00fe9de3e348006f6f7128e6cf4e3'
+,'f0df79d10df44f18742682108b17f60a'
+,'f0df79d10df44f18742682108b17f60a'
+,'f129b4923a3e5d5f676a592a8e4b7efd'
+,'f14169430d2a1ccb92266e8fb27b5bb7'
+,'f1a2419d56c2a09edf4030caeebeb5b6'
+,'f1b4411717c78f67380366c2a16a4d1e'
+,'f395649fb47860aebc4817c7a6ea90e6'
+,'f467b8de5a37d9a818c0cbb557089c55'
+,'f696de645de36b56677457d2d3136524'
+,'f696de645de36b56677457d2d3136524'
+,'f758703e18f588f2370783f8b779e664'
+,'f86eb77e1cefe28e9f0e9d3775fae261'
+,'fb903879c556260ae2604ae0c45cb92a'
+,'fba8372d56b91b1bff7b71d970b5af58'
+,'fbe0433e5b1a3db9dc9d6ed21efc6148'
+,'fc3504d2efaaaa976a33b3c856927155'
+,'fc83b793850ea70d9e898afd0b3ef592'
+,'fd2130d0d215069168dc2f79c1f5ae44'
+,'fed19d671569afe8a2f9fa0953dd25ca'
+)and week_number = 17
+--order by driver_id
+
+
+
+
+select * 
+INTO dbo.new_data_segment
+from
+(select A.driver_id, A.ride_distance, A.ride_duration, A.ride_fare, A.ride_id, month(A.timestamp_) as month_, DatePart(week, A.timestamp_) as week_number 
+from (select * from dbo.combine_data where event_ = 'requested_at') A
+inner join (select * from dbo.combine_data where event_ = 'accepted_at') B
+on A.ride_id = B.ride_id
+inner join (select * from dbo.combine_data where event_ = 'arrived_at') C
+on B.ride_id = C.ride_id
+inner join (select * from dbo.combine_data where event_ = 'picked_up_at') D
+on C.ride_id = D.ride_id
+inner join (select * from dbo.combine_data where event_ = 'dropped_off_at') E
+on D.ride_id = E.ride_id
+where A.timestamp_ < B.timestamp_
+and B.timestamp_ < C.timestamp_
+and C.timestamp_ < D.timestamp_
+and D.timestamp_ < E.timestamp_
+) A
+
+select * from dbo.new_data_segment
+
+
+select * from dbo.combine_data 
+where driver_id = '1e836fdeba5bcacf45438c08bfcf4fa3'
